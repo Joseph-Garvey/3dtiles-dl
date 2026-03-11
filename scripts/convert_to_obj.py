@@ -73,36 +73,57 @@ for obj in mesh_objects:
 
 print(f"Found {len(all_materials)} materials and {len(all_images)} textures")
 
-# Fix material textures - ensure proper node connections for OBJ export
-print("Fixing material texture connections...")
+# Fix material textures - convert to standard Principled BSDF for OBJ export
+# Google 3D Tiles use Emission-based materials which OBJ doesn't handle well
+print("Converting materials to Principled BSDF for OBJ compatibility...")
 for mat in bpy.data.materials:
     if mat.use_nodes:
         nodes = mat.node_tree.nodes
         links = mat.node_tree.links
-        
-        # Find the Principled BSDF and texture image nodes
-        principled = None
-        tex_image = None
-        
+
+        tex_images = []
+        output_node = None
+
         for node in nodes:
-            if node.type == 'BSDF_PRINCIPLED':
-                principled = node
-            elif node.type == 'TEX_IMAGE' and node.image:
-                tex_image = node
-        
-        # If we have both, ensure they're properly connected
-        if principled and tex_image:
-            # Check if texture is connected to Base Color
+            if node.type == 'TEX_IMAGE' and node.image:
+                tex_images.append(node)
+            elif node.type == 'OUTPUT_MATERIAL':
+                output_node = node
+
+        if tex_images and output_node:
+            principled = None
+            for node in nodes:
+                if node.type == 'BSDF_PRINCIPLED':
+                    principled = node
+                    break
+
+            if not principled:
+                principled = nodes.new(type='ShaderNodeBsdfPrincipled')
+                principled.location = (output_node.location.x - 300, output_node.location.y)
+                print(f"  Created Principled BSDF for: {mat.name}")
+
             base_color_connected = False
             for link in links:
                 if link.to_node == principled and link.to_socket.name == 'Base Color':
                     base_color_connected = True
                     break
-            
-            # If not connected, connect the texture to Base Color
-            if not base_color_connected:
-                links.new(tex_image.outputs['Color'], principled.inputs['Base Color'])
-                print(f"  Connected texture to Base Color in material: {mat.name}")
+
+            if not base_color_connected and tex_images:
+                links.new(tex_images[0].outputs['Color'], principled.inputs['Base Color'])
+                print(f"  Connected texture to Base Color in: {mat.name}")
+
+            surface_connected = False
+            for link in links:
+                if link.to_node == output_node and link.to_socket.name == 'Surface' and link.from_node == principled:
+                    surface_connected = True
+                    break
+
+            if not surface_connected:
+                for link in list(links):
+                    if link.to_node == output_node and link.to_socket.name == 'Surface':
+                        links.remove(link)
+                links.new(principled.outputs['BSDF'], output_node.inputs['Surface'])
+                print(f"  Connected Principled BSDF to output in: {mat.name}")
 
 if merge and len(mesh_objects) > 1:
     print("Merging meshes (preserving materials)...")
@@ -212,24 +233,43 @@ output_dir = output_file.parent
 textures_dir = output_dir / "textures"
 textures_dir.mkdir(exist_ok=True)
 
+# Change working directory so // paths resolve correctly
+os.chdir(str(output_dir))
+
 # Save all images to the textures directory and update their paths
 print("Saving textures...")
+saved_count = 0
 for img in bpy.data.images:
-    if img.users > 0 and img.has_data:
-        # Generate a filename for the texture
-        img_name = img.name
-        if not img_name.endswith(('.png', '.jpg', '.jpeg')):
-            img_name = f"{img_name}.png"
-        img_path = textures_dir / img_name
-        
-        # Save the image
-        img.filepath_raw = str(img_path)
-        img.file_format = 'PNG'
-        try:
+    if img.users == 0:
+        continue
+    if img.type in ('RENDER_RESULT', 'COMPOSITING'):
+        continue
+    if not img.packed_file and not img.has_data:
+        continue
+
+    img_name = img.name
+    if not img_name.endswith(('.png', '.jpg', '.jpeg')):
+        img_name = f"{img_name}.png"
+    img_path = textures_dir / img_name
+
+    try:
+        if img.packed_file:
+            # Write raw packed bytes directly — works in background mode
+            # without needing the GPU pixel buffer (has_data) to be loaded.
+            img_path.write_bytes(img.packed_file.data)
+        else:
+            img.filepath_raw = str(img_path)
+            img.file_format = 'PNG'
             img.save()
-            print(f"  Saved texture: {img_name}")
-        except Exception as e:
-            print(f"  Warning: Could not save texture {img_name}: {e}")
+        # Use Blender's // convention (relative to blend-file dir = CWD =
+        # output_dir) so the OBJ exporter writes "textures/<name>" in the
+        # .mtl rather than an absolute Windows path.
+        img.filepath = f"//textures/{img_name}"
+        saved_count += 1
+        print(f"  Saved texture: {img_name}")
+    except Exception as e:
+        print(f"  Warning: Could not save texture {img_name}: {e}")
+print(f"Saved {saved_count} textures")
 
 # Export to OBJ with textures
 print(f"Exporting to {output_file}...")
@@ -366,6 +406,24 @@ def convert_tiles_to_obj(
         if result.returncode != 0:
             print(f"Blender error output:\n{result.stderr}")
             sys.exit(1)
+
+        # Post-process the .mtl to fix texture paths.
+        # Blender's path_mode='RELATIVE' in background mode (no blend file)
+        # produces incorrect relative paths on Windows.  We know every texture
+        # was saved to textures/<name>, so rewrite map_Kd entries directly.
+        mtl_file = output_file.with_suffix(".mtl")
+        if mtl_file.exists():
+            lines = mtl_file.read_text(encoding="utf-8").splitlines()
+            fixed = []
+            for line in lines:
+                stripped = line.strip()
+                if stripped.lower().startswith("map_kd") and " " in stripped:
+                    img_name = Path(stripped.split(None, 1)[1].strip()).name
+                    fixed.append(f"map_Kd textures/{img_name}")
+                else:
+                    fixed.append(line)
+            mtl_file.write_text("\n".join(fixed) + "\n", encoding="utf-8")
+            print("Fixed texture paths in MTL")
 
     finally:
         # Clean up temp script

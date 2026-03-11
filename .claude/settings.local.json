@@ -7,7 +7,20 @@
       "Bash(git add:*)",
       "Bash(\"C:\\\\Users\\\\josep\\\\Desktop\\\\VSCode\\\\3dtiles-dl-1\\\\.gitignore\":*)",
       "Bash(.venv/Scripts/pip install:*)",
-      "Bash(.venv/Scripts/pip.exe install:*)"
+      "Bash(.venv/Scripts/pip.exe install:*)",
+      "Bash(grep:*)",
+      "Bash(python:*)",
+      "Bash(cd \"C:/Users/josep/Desktop/VSCode/3dtiles-dl-1\" && uv add --dev pytest && uv run pytest tests/test_mesh_outputs.py -v 2>&1)",
+      "Bash(cd \"C:/Users/josep/Desktop/VSCode/3dtiles-dl-1\" && uv add --dev pycollada 2>&1)",
+      "Bash(cd \"C:/Users/josep/Desktop/VSCode/3dtiles-dl-1\" && uv run pytest tests/test_mesh_outputs.py -v 2>&1)",
+      "Bash(cd \"C:/Users/josep/Desktop/VSCode/3dtiles-dl-1\" && uv run python -m scripts.convert_to_obj -i tiles -o output.obj 2>&1)",
+      "Bash(cd \"C:/Users/josep/Desktop/VSCode/3dtiles-dl-1\" && uv run python -m scripts.convert_to_obj -i tiles -o output.obj 2>&1 | tail -10)",
+      "Bash(cd \"C:/Users/josep/Desktop/VSCode/3dtiles-dl-1\" && uv run python -m scripts.convert_to_obj -i tiles -o output.obj 2>&1 | tail -6)",
+      "Bash(cd \"C:/Users/josep/Desktop/VSCode/3dtiles-dl-1\" && uv run python -m scripts.convert_to_obj -i tiles -o output.obj 2>&1 | tail -8)",
+      "Bash(cd \"C:/Users/josep/Desktop/VSCode/3dtiles-dl-1\" && uv run python -m scripts.convert_to_obj -i tiles -o output.obj 2>&1 | grep -E \"Fixed|Done|Saved [0-9]|Error\")",
+      "Bash(cd \"C:/Users/josep/Desktop/VSCode/3dtiles-dl-1\" && uv run python -m scripts.convert_to_obj -i tiles -o output.obj 2>&1 | tail -5)",
+      "Bash(cd \"C:/Users/josep/Desktop/VSCode/3dtiles-dl-1\" && uv run python -m scripts.convert_to_obj -i tiles -o output.obj 2>&1 | grep -E \"Saved [0-9]|Fixed|Done|Error|Warning\")",
+      "Skill(commit-commands:commit-push-pr)"
     ]
   }
 }

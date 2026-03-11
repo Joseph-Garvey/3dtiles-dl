@@ -11,3 +11,9 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "trimesh>=4.11.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pycollada>=0.9.3",
+    "pytest>=9.0.2",
+]

@@ -504,20 +504,27 @@ else:
             img.filepath = str(new_path.resolve())
             saved_count += 1
         else:
-            # Image wasn't unpacked, try to save it directly if it has packed data
-            if img.packed_file:
+            # Image wasn't unpacked - save directly from memory/packed data
+            if img.packed_file or img.has_data:
                 img_name = img.name
                 for char in ['<', '>', ':', '"', '/', '\\\\', '|', '?', '*']:
                     img_name = img_name.replace(char, '_')
-                img_path = textures_dir / (img_name + '.png')
-                
+                if not img_name.endswith(('.png', '.jpg', '.jpeg')):
+                    img_name += '.png'
+                img_path = textures_dir / img_name
+
                 try:
-                    # Temporarily unpack to a file
-                    img.filepath = str(img_path)
-                    img.unpack(method='WRITE_LOCAL')
+                    if img.packed_file:
+                        # Write raw packed bytes directly — works in background
+                        # mode without needing the GPU pixel buffer to be loaded.
+                        img_path.write_bytes(img.packed_file.data)
+                    else:
+                        img.filepath_raw = str(img_path)
+                        img.file_format = 'PNG'
+                        img.save()
                     img.filepath = str(img_path.resolve())
                     saved_count += 1
-                    print(f"  Saved from packed: {img_name}.png")
+                    print(f"  Saved from packed: {img_name}")
                 except Exception as e:
                     print(f"  Failed to save {img_name}: {e}")
 

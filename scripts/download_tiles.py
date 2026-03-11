@@ -4,6 +4,7 @@ from src.wgs84 import cartesian_from_degrees
 
 import argparse
 from pathlib import Path
+import re
 import sys
 import os
 
@@ -12,6 +13,36 @@ from dotenv import load_dotenv
 import numpy as np
 import requests
 from tqdm import tqdm
+
+
+def _parse_coord(s):
+    """Parse a coordinate string in decimal degrees or DMS format.
+    Accepts: -71.069, 52°12'17.25"N, 52 12 17.25 N, etc.
+    """
+    s = s.strip()
+    # Try plain decimal first
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    # DMS: degrees°minutes'seconds"direction  (all separators optional/flexible)
+    m = re.match(
+        r"""(?P<deg>\d+(?:\.\d+)?)\s*[°d\s]\s*
+            (?:(?P<min>\d+(?:\.\d+)?)\s*['\s]\s*)?
+            (?:(?P<sec>\d+(?:\.\d+)?)\s*["s]?\s*)?
+            (?P<dir>[NSEWnsew])?$""",
+        s, re.VERBOSE
+    )
+    if not m:
+        raise argparse.ArgumentTypeError(f"unrecognised coordinate: {s!r}")
+    deg = float(m.group("deg"))
+    minutes = float(m.group("min") or 0)
+    sec = float(m.group("sec") or 0)
+    direction = (m.group("dir") or "").upper()
+    decimal = deg + minutes / 60 + sec / 3600
+    if direction in ("S", "W"):
+        decimal = -decimal
+    return decimal
 
 
 def _get_elevation(lon, lat, key):
@@ -36,8 +67,8 @@ if __name__ == "__main__":
                         help="your Google Maps 3d Tiles API key (overrides .env)",
                         required=False)
     parser.add_argument("-c", "--coords",
-                        help="four corner points: lon1 lat1 lon2 lat2 lon3 lat3 lon4 lat4 [degrees]",
-                        type=float,
+                        help="four corner points: lon1 lat1 lon2 lat2 lon3 lat3 lon4 lat4 [decimal degrees or DMS e.g. 52°12'17.25\"N]",
+                        type=str,
                         nargs='+',
                         required=True)
     parser.add_argument("-o", "--out",
@@ -47,7 +78,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     load_dotenv()
-    api_key = api_key or os.getenv("GOOGLE_MAPS_API_KEY")
+    api_key = args.api_key or os.getenv("GOOGLE_MAPS_API_KEY")
     if not api_key:
         print("API key required: set GOOGLE_MAPS_API_KEY in .env or pass -k")
         sys.exit(-1)
@@ -56,7 +87,13 @@ if __name__ == "__main__":
         print("Must provide four corner points: -c lon1 lat1 lon2 lat2 lon3 lat3 lon4 lat4")
         sys.exit(-1)
 
-    corners = [(args.coords[i], args.coords[i + 1]) for i in range(0, 8, 2)]
+    try:
+        coords = [_parse_coord(c) for c in args.coords]
+    except argparse.ArgumentTypeError as e:
+        print(e)
+        sys.exit(-1)
+
+    corners = [(coords[i], coords[i + 1]) for i in range(0, 8, 2)]
     centroid_lon = sum(lon for lon, _ in corners) / 4
     centroid_lat = sum(lat for _, lat in corners) / 4
 

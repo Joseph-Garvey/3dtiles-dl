@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D Tiles Downloader</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; display: flex; height: 100vh; overflow: hidden; background: #111; color: #eee; }
+
+#map { flex: 1; }
+
+#panel {
+  width: 340px; min-width: 340px;
+  display: flex; flex-direction: column; gap: 0;
+  background: #1a1a1a;
+  border-left: 1px solid #2a2a2a;
+  overflow-y: auto;
+}
+
+.section {
+  padding: 14px 16px;
+  border-bottom: 1px solid #2a2a2a;
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+.section-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .08em; color: #666;
+}
+
+h1 { font-size: 15px; font-weight: 700; color: #fff; }
+
+.hint { font-size: 12px; color: #777; line-height: 1.5; }
+
+/* Points */
+.points-list { display: flex; flex-direction: column; gap: 5px; }
+.point-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; background: #242424; border-radius: 6px;
+  font-size: 12px; color: #999;
+}
+.point-row.filled { background: #1a2e22; color: #6fcf97; }
+.point-row.active { background: #26261a; color: #f2c94c; }
+.point-num {
+  width: 19px; height: 19px; border-radius: 50%; background: #3a3a3a;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; flex-shrink: 0;
+}
+.point-row.filled .point-num { background: #27ae60; color: #fff; }
+.point-row.active .point-num { background: #e6b800; color: #111; }
+.point-coords { flex: 1; font-family: monospace; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rm-btn { background: none; border: none; color: #555; cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1; flex-shrink: 0; }
+.rm-btn:hover { color: #e74c3c; }
+
+/* Form fields */
+label { font-size: 12px; color: #999; display: block; margin-bottom: 3px; }
+input[type="text"], select {
+  width: 100%; padding: 7px 9px;
+  background: #242424; border: 1px solid #383838;
+  border-radius: 6px; color: #eee; font-size: 13px;
+}
+input[type="text"]:focus, select:focus { outline: none; border-color: #4a9eff; }
+select option { background: #242424; }
+
+.row2 { display: flex; gap: 8px; }
+.row2 > * { flex: 1; }
+
+/* Checkboxes */
+.checks { display: flex; flex-wrap: wrap; gap: 8px; }
+.check-label {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 12px; color: #aaa; cursor: pointer;
+}
+
+/* Buttons */
+.btn {
+  width: 100%; padding: 9px 12px; border: none; border-radius: 6px;
+  font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .15s;
+}
+.btn:disabled { opacity: .3; cursor: default; }
+.btn-blue { background: #2563eb; color: #fff; }
+.btn-blue:not(:disabled):hover { background: #1d53d0; }
+.btn-green { background: #16a34a; color: #fff; }
+.btn-green:not(:disabled):hover { background: #15803d; }
+.btn-gray { background: #2e2e2e; color: #ccc; }
+.btn-gray:hover { background: #363636; }
+.btn-success { background: #166534 !important; }
+
+/* Log */
+.log-wrap {
+  background: #0d0d0d; border: 1px solid #2a2a2a; border-radius: 6px;
+  padding: 8px 10px; max-height: 200px; overflow-y: auto;
+  font-family: monospace; font-size: 11px; line-height: 1.5; color: #aaa;
+}
+.log-wrap .err { color: #f87171; }
+.log-wrap .ok  { color: #6fcf97; }
+
+/* Status badge */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600;
+}
+.badge-running { background: #1e3a5f; color: #60a5fa; }
+.badge-done    { background: #14532d; color: #6fcf97; }
+.badge-error   { background: #450a0a; color: #f87171; }
+
+.hidden { display: none !important; }
+
+/* coord format radio */
+.fmt-row { display: flex; gap: 12px; }
+.fmt-row label { display: flex; align-items: center; gap: 4px; margin: 0; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+
+  <!-- Header -->
+  <div class="section">
+    <h1>3D Tiles Downloader</h1>
+    <p class="hint">Click the map to place 4 corner points, then download and convert.</p>
+  </div>
+
+  <!-- Points -->
+  <div class="section">
+    <div class="section-title">Area corners</div>
+    <div class="points-list" id="pointsList"></div>
+    <div>
+      <label>Coordinate format</label>
+      <div class="fmt-row">
+        <label><input type="radio" name="fmt" value="decimal" checked> Decimal</label>
+        <label><input type="radio" name="fmt" value="dms"> DMS</label>
+      </div>
+    </div>
+    <button class="btn btn-gray" id="resetBtn">Reset Points</button>
+  </div>
+
+  <!-- Download -->
+  <div class="section">
+    <div class="section-title">Download</div>
+    <div>
+      <label for="outDir">Output directory (GLB tiles)</label>
+      <input type="text" id="outDir" value="tiles">
+    </div>
+    <button class="btn btn-blue" id="dlBtn" disabled>Download Tiles</button>
+    <div id="dlStatus" class="hidden">
+      <span class="badge badge-running" id="dlBadge">Running…</span>
+    </div>
+    <div class="log-wrap hidden" id="dlLog"></div>
+  </div>
+
+  <!-- Convert -->
+  <div class="section" id="convertSection">
+    <div class="section-title">Convert</div>
+    <p class="hint" id="convertHint">Download tiles first to enable conversion.</p>
+
+    <div id="convertForm" class="hidden" style="display:flex;flex-direction:column;gap:10px;">
+      <div class="row2">
+        <div>
+          <label>Format</label>
+          <select id="convFmt">
+            <option value="obj">OBJ</option>
+            <option value="dae">DAE (COLLADA)</option>
+            <option value="fbx" selected>FBX</option>
+          </select>
+        </div>
+        <div>
+          <label>Output file</label>
+          <input type="text" id="convOut" value="output.fbx">
+        </div>
+      </div>
+
+      <div id="fbxOpts" class="checks">
+        <label class="check-label"><input type="checkbox" id="optEmbed" checked> Embed textures</label>
+        <label class="check-label"><input type="checkbox" id="optAtlas"> Atlas texture</label>
+        <label class="check-label"><input type="checkbox" id="optJpeg"> JPEG textures</label>
+      </div>
+
+      <div>
+        <label for="blenderPath">Blender path (leave blank to auto-detect)</label>
+        <input type="text" id="blenderPath" placeholder="C:/Program Files/Blender Foundation/…">
+      </div>
+
+      <button class="btn btn-green" id="convBtn">Convert</button>
+      <div id="convStatus" class="hidden">
+        <span class="badge badge-running" id="convBadge">Running…</span>
+      </div>
+      <div class="log-wrap hidden" id="convLog"></div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const MAX = 4;
+let points = [];
+let markers = [];
+let polygon = null;
+let downloadedDir = null;  // set after successful download
+
+// ── Map setup ────────────────────────────────────────────────────────────────
+const map = L.map('map').setView([51.505, -0.09], 13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors'
+}).addTo(map);
+
+if (navigator.geolocation) {
+  navigator.geolocation.getCurrentPosition(p => map.setView([p.coords.latitude, p.coords.longitude], 14));
+}
+
+const COLORS = ['#e74c3c','#f39c12','#2ecc71','#3498db'];
+
+function makeIcon(n) {
+  return L.divIcon({
+    html: `<div style="width:24px;height:24px;border-radius:50%;background:${COLORS[n]};color:#fff;
+      display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;
+      border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.6);">${n+1}</div>`,
+    iconSize:[24,24], iconAnchor:[12,12], className:''
+  });
+}
+
+function toDMS(deg, isLat) {
+  const abs = Math.abs(deg), d = Math.floor(abs), mf = (abs-d)*60, m = Math.floor(mf), s = ((mf-m)*60).toFixed(2);
+  const dir = isLat ? (deg>=0?'N':'S') : (deg>=0?'E':'W');
+  return `${d}°${m}'${s}"${dir}`;
+}
+
+function fmtCoord(lat, lng) {
+  const fmt = document.querySelector('input[name="fmt"]:checked').value;
+  return fmt === 'dms' ? `${toDMS(lng,false)} ${toDMS(lat,true)}` : `${lng.toFixed(6)} ${lat.toFixed(6)}`;
+}
+
+function rawCoords() {
+  // always decimal for the API
+  return points.flatMap(p => [p.lng, p.lat]);
+}
+
+// ── Points ───────────────────────────────────────────────────────────────────
+function renderPoints() {
+  const list = document.getElementById('pointsList');
+  list.innerHTML = '';
+  for (let i = 0; i < MAX; i++) {
+    const filled = i < points.length, active = i === points.length;
+    const row = document.createElement('div');
+    row.className = 'point-row' + (filled?' filled':active?' active':'');
+
+    const num = document.createElement('div');
+    num.className = 'point-num'; num.textContent = i+1;
+
+    const coords = document.createElement('div');
+    coords.className = 'point-coords';
+    coords.textContent = filled ? fmtCoord(points[i].lat, points[i].lng)
+                       : active ? 'Click map to place…' : '—';
+    row.append(num, coords);
+
+    if (filled) {
+      const btn = document.createElement('button');
+      btn.className = 'rm-btn'; btn.textContent = '✕'; btn.title = 'Remove';
+      btn.onclick = () => { points.splice(i,1); refresh(); };
+      row.append(btn);
+    }
+    list.append(row);
+  }
+  document.getElementById('dlBtn').disabled = points.length < MAX;
+}
+
+function refresh() {
+  markers.forEach(m => map.removeLayer(m));
+  markers = points.map((p,i) => L.marker([p.lat,p.lng],{icon:makeIcon(i)}).addTo(map));
+  if (polygon) { map.removeLayer(polygon); polygon = null; }
+  if (points.length === MAX) {
+    polygon = L.polygon(points.map(p=>[p.lat,p.lng]),{
+      color:'#4a9eff', fillColor:'#4a9eff', fillOpacity:.15, weight:2
+    }).addTo(map);
+  }
+  renderPoints();
+}
+
+map.on('click', e => {
+  if (points.length >= MAX) return;
+  points.push({lat: e.latlng.lat, lng: e.latlng.lng});
+  refresh();
+});
+
+document.getElementById('resetBtn').onclick = () => { points = []; refresh(); };
+document.querySelectorAll('input[name="fmt"]').forEach(r => r.onchange = () => { renderPoints(); });
+
+// ── Log helpers ───────────────────────────────────────────────────────────────
+function appendLog(el, text, cls) {
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = text;
+  el.append(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+function setBadge(el, status) {
+  el.className = 'badge';
+  if (status === 'running') { el.classList.add('badge-running'); el.textContent = 'Running…'; }
+  else if (status === 'done') { el.classList.add('badge-done'); el.textContent = 'Done'; }
+  else { el.classList.add('badge-error'); el.textContent = 'Error'; }
+}
+
+function streamJob(jobId, logEl, badgeWrap, badge, onDone) {
+  logEl.classList.remove('hidden');
+  badgeWrap.classList.remove('hidden');
+  const es = new EventSource(`/api/stream/${jobId}`);
+  es.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'log') {
+      const isErr = msg.data.toLowerCase().includes('error') || msg.data.toLowerCase().includes('warning');
+      appendLog(logEl, msg.data, isErr ? 'err' : '');
+    } else if (msg.type === 'status') {
+      setBadge(badge, msg.data);
+      es.close();
+      if (onDone) onDone(msg.data);
+    }
+  };
+  es.onerror = () => {
+    appendLog(logEl, 'Connection lost.', 'err');
+    setBadge(badge, 'error');
+    es.close();
+  };
+}
+
+// ── Download ──────────────────────────────────────────────────────────────────
+document.getElementById('dlBtn').onclick = async () => {
+  const outDir = document.getElementById('outDir').value || 'tiles';
+  const dlLog = document.getElementById('dlLog');
+  const dlStatus = document.getElementById('dlStatus');
+  const dlBadge = document.getElementById('dlBadge');
+  const dlBtn = document.getElementById('dlBtn');
+
+  dlLog.innerHTML = '';
+  setBadge(dlBadge, 'running');
+  dlBtn.disabled = true;
+
+  const res = await fetch('/api/download', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ coords: rawCoords(), out_dir: outDir })
+  });
+  const { job_id, error } = await res.json();
+  if (error) { appendLog(dlLog, error, 'err'); setBadge(dlBadge, 'error'); dlStatus.classList.remove('hidden'); dlLog.classList.remove('hidden'); dlBtn.disabled = false; return; }
+
+  streamJob(job_id, dlLog, dlStatus, dlBadge, status => {
+    dlBtn.disabled = false;
+    if (status === 'done') {
+      downloadedDir = outDir;
+      enableConvert(outDir);
+    }
+  });
+};
+
+// ── Convert ───────────────────────────────────────────────────────────────────
+function enableConvert(inDir) {
+  document.getElementById('convertHint').classList.add('hidden');
+  const form = document.getElementById('convertForm');
+  form.classList.remove('hidden');
+  form.style.display = 'flex';
+  document.getElementById('convOut').value = `output.${document.getElementById('convFmt').value}`;
+}
+
+document.getElementById('convFmt').onchange = function() {
+  const fmt = this.value;
+  document.getElementById('convOut').value = `output.${fmt}`;
+  document.getElementById('fbxOpts').style.display = fmt === 'fbx' ? '' : 'none';
+};
+
+document.getElementById('convBtn').onclick = async () => {
+  const fmt    = document.getElementById('convFmt').value;
+  const inDir  = downloadedDir || document.getElementById('outDir').value || 'tiles';
+  const outFile = document.getElementById('convOut').value || `output.${fmt}`;
+  const blender = document.getElementById('blenderPath').value.trim() || null;
+  const convLog = document.getElementById('convLog');
+  const convStatus = document.getElementById('convStatus');
+  const convBadge  = document.getElementById('convBadge');
+  const convBtn    = document.getElementById('convBtn');
+
+  convLog.innerHTML = '';
+  setBadge(convBadge, 'running');
+  convBtn.disabled = true;
+
+  const body = { format: fmt, in_dir: inDir, out_file: outFile, blender };
+  if (fmt === 'fbx') {
+    body.embed_textures = document.getElementById('optEmbed').checked;
+    body.atlas = document.getElementById('optAtlas').checked;
+    body.jpeg  = document.getElementById('optJpeg').checked;
+  }
+
+
+  const res = await fetch('/api/convert', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  const { job_id, error } = await res.json();
+  if (error) { appendLog(convLog, error, 'err'); setBadge(convBadge, 'error'); convStatus.classList.remove('hidden'); convLog.classList.remove('hidden'); convBtn.disabled = false; return; }
+
+  streamJob(job_id, convLog, convStatus, convBadge, () => { convBtn.disabled = false; });
+};
+
+// Init
+renderPoints();
+</script>
+</body>
+</html>
